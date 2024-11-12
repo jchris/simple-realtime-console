@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useRef, useCallback, useState } from 'react';
 
 import { RealtimeEvent, useRealtimeClient } from '../utils/useRealtimeClient';
 import { ItemType } from '@openai/realtime-api-beta/dist/lib/client.js';
@@ -33,7 +33,6 @@ export function ConsolePage() {
 
   const startTimeRef = useRef<string>(new Date().toISOString());
 
-  const [items, setItems] = useState<ItemType[]>([]);
   const [realtimeEvents, setRealtimeEvents] = useState<RealtimeEvent[]>([]);
 
   const [memoryKv, setMemoryKv] = useState<{ [key: string]: any }>({
@@ -41,7 +40,7 @@ export function ConsolePage() {
     todaysDate: new Date().toISOString().split('T')[0],
   });
 
-  const { eventsScrollRef } = useUIScroller(items, realtimeEvents);
+  const { eventsScrollRef } = useUIScroller(realtimeEvents);
   const {
     clientCanvasRef,
     serverCanvasRef,

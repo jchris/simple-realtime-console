@@ -1,7 +1,7 @@
 import { useRef, useEffect } from 'react';
 import { RealtimeEvent } from './useRealtimeClient';
 
-export function useUIScroller(items: any[], realtimeEvents: RealtimeEvent[]) {
+export function useUIScroller(realtimeEvents: RealtimeEvent[]) {
   const eventsScrollHeightRef = useRef(0);
   const eventsScrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -14,16 +14,6 @@ export function useUIScroller(items: any[], realtimeEvents: RealtimeEvent[]) {
       }
     }
   }, [realtimeEvents]);
-
-  useEffect(() => {
-    const conversationEls = [].slice.call(
-      document.body.querySelectorAll('[data-conversation-content]')
-    );
-    for (const el of conversationEls) {
-      const conversationEl = el as HTMLDivElement;
-      conversationEl.scrollTop = conversationEl.scrollHeight;
-    }
-  }, [items]);
 
   return { eventsScrollHeightRef, eventsScrollRef };
 }
