@@ -278,6 +278,33 @@ export function ConsolePage() {
 
     client.on('error', (error: Error) => {
       console.error(error);
+      setRealtimeEvents((prev) => [
+        ...prev,
+        {
+          time: new Date().toISOString(),
+          source: 'client',
+          event: { type: 'error', error: error.message },
+        },
+      ]);
+    });
+
+    client.on('realtime.event', (event: any) => {
+      if (event.source === 'server' && !event.event.type?.endsWith('done')) {
+        console.log('suppressed event1', event);
+        return;
+      }
+      if (event.source === 'client') {
+        console.log('suppressed event2', event);
+        return;
+      }
+      setRealtimeEvents((prev) => [
+        ...prev,
+        {
+          time: new Date().toISOString(),
+          source: event.source || 'client',
+          event: event,
+        },
+      ]);
     });
 
     client.on('connected', () => {
@@ -317,31 +344,37 @@ export function ConsolePage() {
       wavStreamPlayer.add16BitPCM(audio.audio);
     });
 
-    client.on('conversation.updated', async ({ item, delta }: { 
-      item: { 
-        id: string; 
-        status: string; 
-        formatted: { 
-          audio?: Uint8Array; 
-          file?: { url: string }; 
-        }; 
-      }; 
-      delta?: { audio?: Uint8Array } 
-    }) => {
-      const items = client.conversation.getItems();
-      if (delta?.audio) {
-        wavStreamPlayer.add16BitPCM(delta.audio, item.id);
+    client.on(
+      'conversation.updated',
+      async ({
+        item,
+        delta,
+      }: {
+        item: {
+          id: string;
+          status: string;
+          formatted: {
+            audio?: Uint8Array;
+            file?: { url: string };
+          };
+        };
+        delta?: { audio?: Uint8Array };
+      }) => {
+        const items = client.conversation.getItems();
+        if (delta?.audio) {
+          wavStreamPlayer.add16BitPCM(delta.audio, item.id);
+        }
+        if (item.status === 'completed' && item.formatted.audio?.length) {
+          const wavFile = await WavRecorder.decode(
+            item.formatted.audio,
+            24000,
+            24000
+          );
+          item.formatted.file = wavFile;
+        }
+        setItems(items);
       }
-      if (item.status === 'completed' && item.formatted.audio?.length) {
-        const wavFile = await WavRecorder.decode(
-          item.formatted.audio,
-          24000,
-          24000
-        );
-        item.formatted.file = wavFile;
-      }
-      setItems(items);
-    });
+    );
 
     client.on('conversation.interrupted', async () => {
       const trackSampleOffset = await wavStreamPlayer.interrupt();
@@ -353,13 +386,14 @@ export function ConsolePage() {
 
     return () => {
       client.off('error');
+      client.off('realtime.event');
       client.off('connected');
       client.off('disconnected');
       client.off('message');
       client.off('audio');
       client.off('conversation.updated');
       client.off('conversation.interrupted');
-      
+
       try {
         client.removeTool('set_memory');
       } catch (e) {
@@ -375,6 +409,11 @@ export function ConsolePage() {
           <Button
             onClick={isConnected ? disconnectConversation : connectConversation}
             disabled={!apiKey}
+            className={`px-4 py-2 rounded-md ${
+              isConnected
+                ? 'bg-red-500 hover:bg-red-600 text-white'
+                : 'bg-blue-500 hover:bg-blue-600 text-white'
+            }`}
           >
             {isConnected ? 'Disconnect' : 'Connect'}
           </Button>
@@ -417,7 +456,9 @@ export function ConsolePage() {
                 </pre>
               </div>
               <div>
-                <h3 className="text-sm font-medium text-gray-700">Events</h3>
+                <h3 className="text-sm font-medium text-gray-700">
+                  Filtered Events ({realtimeEvents.length})
+                </h3>
                 <div
                   ref={eventsScrollRef}
                   className="mt-2 space-y-2 h-96 overflow-auto"
@@ -426,9 +467,7 @@ export function ConsolePage() {
                     <div
                       key={i}
                       className={`text-xs p-2 rounded ${
-                        event.source === 'server'
-                          ? 'bg-green-50'
-                          : 'bg-blue-50'
+                        event.source === 'server' ? 'bg-green-50' : 'bg-blue-50'
                       }`}
                     >
                       <div className="flex items-center justify-between">
@@ -447,8 +486,18 @@ export function ConsolePage() {
                           {expandedEvents[i] ? '▼' : '▶'}
                         </button>
                       </div>
+                      <div className="text-xs text-gray-600">
+                        {(event.event.event.transcript &&
+                          '"' + event.event.event.transcript + '"') || (
+                            <span className="font-mono">
+                              {event.event.event.type}
+                            </span>
+                          ) ||
+                          console.log(event.event) ||
+                          JSON.stringify(event.event)}
+                      </div>
                       {expandedEvents[i] && (
-                        <pre className="mt-2 whitespace-pre-wrap">
+                        <pre className="mt-2 whitespace-pre-wrap overflow-auto max-h-40">
                           {JSON.stringify(event.event, null, 2)}
                         </pre>
                       )}
