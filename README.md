@@ -6,6 +6,11 @@ https://github.com/openai/openai-realtime-console but it doesnt suck. simplest p
 ![image](https://github.com/user-attachments/assets/695e0dae-0a14-4128-98b3-faf1b121e23c)
 
 
+i've also suppressed all the less useful event spam into the console
+
+![image](https://github.com/user-attachments/assets/5d259f29-dee7-4e10-98b8-850248450e21)
+
+
 # Starting the console
 
 This is a React project created using `create-react-app` that is bundled via Webpack.
