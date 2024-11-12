@@ -24,9 +24,6 @@ import { Button } from '../components/button/Button';
 import { Toggle } from '../components/toggle/Toggle';
 import { Map } from '../components/Map';
 
-import './ConsolePage.scss';
-import { isJsxOpeningLikeElement } from 'typescript';
-
 /**
  * Type for result from get_weather() function call
  */
@@ -51,7 +48,11 @@ interface RealtimeEvent {
   time: string;
   source: 'client' | 'server';
   count?: number;
-  event: { [key: string]: any };
+  event: { 
+    event_id?: string;
+    type?: string;
+    [key: string]: any;
+  };
 }
 
 export function ConsolePage() {
@@ -504,57 +505,33 @@ export function ConsolePage() {
    * Render the application
    */
   return (
-    <div data-component="ConsolePage">
-      <div className="content-top">
-        <div className="content-title">
-          <img src="/openai-logomark.svg" />
-          <span>realtime console</span>
-        </div>
-        <div className="content-api-key">
-          {!LOCAL_RELAY_SERVER_URL && (
-            <Button
-              icon={Edit}
-              iconPosition="end"
-              buttonStyle="flush"
-              label={`api key: ${apiKey.slice(0, 3)}...`}
-              onClick={() => resetAPIKey()}
-            />
-          )}
+    <div data-component="ConsolePage" className="font-['Roboto_Mono'] font-normal text-xs h-full flex flex-col overflow-hidden mx-2">
+      <div className="content-top flex items-center px-4 min-h-[40px] flex-shrink-0">
+        <div className="content-title flex-grow flex items-center gap-3">
+          <img src="/logo.png" alt="logo" className="w-6 h-6" />
+          <span>OpenAI Realtime API Console</span>
         </div>
       </div>
-      <div className="content-main">
-        <div className="content-logs">
-          <div className="content-block events">
-            <div className="visualization">
-              <div className="visualization-entry client">
-                <canvas ref={clientCanvasRef} />
-              </div>
-              <div className="visualization-entry server">
-                <canvas ref={serverCanvasRef} />
-              </div>
+
+      <div className="content-main flex-grow flex-shrink mx-4 mb-6 overflow-hidden">
+        <div className="content-logs flex-grow flex flex-col overflow-hidden">
+          <div className="content-block relative flex flex-col max-h-full w-full">
+            <div className="content-block-title flex-shrink-0 pt-4 pb-1 relative">
+              events
             </div>
-            <div className="content-block-title">events</div>
-            <div className="content-block-body" ref={eventsScrollRef}>
-              {!realtimeEvents.length && `awaiting connection...`}
-              {realtimeEvents.map((realtimeEvent, i) => {
-                const count = realtimeEvent.count;
-                const event = { ...realtimeEvent.event };
-                if (event.type === 'input_audio_buffer.append') {
-                  event.audio = `[trimmed: ${event.audio.length} bytes]`;
-                } else if (event.type === 'response.audio.delta') {
-                  event.delta = `[trimmed: ${event.delta.length} bytes]`;
-                }
-                return (
-                  <div className="event" key={event.event_id}>
-                    <div className="event-timestamp">
-                      {formatTime(realtimeEvent.time)}
+            <div className="content-block-body text-[#6e6e7f] relative flex-grow py-2 pt-1 leading-[1.2em] overflow-auto">
+              <div className="events border-t border-[#e7e7e7]" ref={eventsScrollRef}>
+                {realtimeEvents.map((event, i) => (
+                  <div key={i} className="event rounded px-0 gap-4 whitespace-pre flex">
+                    <div className="event-timestamp text-left gap-2 py-1 w-20 flex-shrink-0 mr-4">
+                      {formatTime(event.time)}
                     </div>
-                    <div className="event-details">
+                    <div className="event-details flex flex-col text-[#18181b] gap-2">
                       <div
-                        className="event-summary"
+                        className="event-summary px-2 -mx-2 hover:bg-[#f0f0f0] hover:rounded-lg cursor-pointer flex gap-2 items-center"
                         onClick={() => {
                           // toggle event details
-                          const id = event.event_id;
+                          const id = i; // use array index instead of event_id
                           const expanded = { ...expandedEvents };
                           if (expanded[id]) {
                             delete expanded[id];
@@ -564,112 +541,93 @@ export function ConsolePage() {
                           setExpandedEvents(expanded);
                         }}
                       >
-                        <div
-                          className={`event-source ${
-                            event.type === 'error'
-                              ? 'error'
-                              : realtimeEvent.source
-                          }`}
-                        >
-                          {realtimeEvent.source === 'client' ? (
-                            <ArrowUp />
-                          ) : (
-                            <ArrowDown />
-                          )}
-                          <span>
-                            {event.type === 'error'
-                              ? 'error!'
-                              : realtimeEvent.source}
-                          </span>
+                        <div className={`event-source flex-shrink-0 flex items-center gap-2 ${
+                          event.source === 'client'
+                            ? 'text-[#0099ff]'
+                            : event.source === 'server'
+                            ? 'text-[#009900]'
+                            : 'text-[#990000]'
+                        }`}>
+                          <span>{event.source}</span>
+                          {!!event.count && <span>({event.count})</span>}
                         </div>
                         <div className="event-type">
-                          {event.type}
-                          {count && ` (${count})`}
+                          {Object.keys(event.event)[0]}
                         </div>
                       </div>
-                      {!!expandedEvents[event.event_id] && (
-                        <div className="event-payload">
-                          {JSON.stringify(event, null, 2)}
-                        </div>
+                      {expandedEvents[i] && (
+                        <pre className="event-data">
+                          {JSON.stringify(event.event, null, 2)}
+                        </pre>
                       )}
                     </div>
                   </div>
-                );
-              })}
+                ))}
+              </div>
             </div>
           </div>
-          <div className="content-block conversation">
+
+          <div className="conversation flex-shrink-0 w-full overflow-hidden h-[200px] min-h-0 max-h-[200px] border-t border-[#e7e7e7]">
             <div className="content-block-title">conversation</div>
             <div className="content-block-body" data-conversation-content>
-              {!items.length && `awaiting connection...`}
-              {items.map((conversationItem, i) => {
-                return (
-                  <div className="conversation-item" key={conversationItem.id}>
-                    <div className={`speaker ${conversationItem.role || ''}`}>
-                      <div>
-                        {(
-                          conversationItem.role || conversationItem.type
-                        ).replaceAll('_', ' ')}
-                      </div>
-                      <div
-                        className="close"
-                        onClick={() =>
-                          deleteConversationItem(conversationItem.id)
-                        }
-                      >
-                        <X />
-                      </div>
+              {!items.length && 'awaiting connection...'}
+              {items.map((conversationItem) => (
+                <div key={conversationItem.id} className="conversation-item relative flex gap-4 mb-4 group">
+                  <div className={`speaker relative text-left gap-4 w-20 flex-shrink-0 mr-4 ${
+                    conversationItem.role === 'user' ? 'text-[#0099ff]' : 
+                    conversationItem.role === 'assistant' ? 'text-[#009900]' : ''
+                  }`}>
+                    <div>
+                      {(conversationItem.role || conversationItem.type).replaceAll('_', ' ')}
                     </div>
-                    <div className={`speaker-content`}>
-                      {/* tool response */}
-                      {conversationItem.type === 'function_call_output' && (
-                        <div>{conversationItem.formatted.output}</div>
-                      )}
-                      {/* tool call */}
-                      {!!conversationItem.formatted.tool && (
-                        <div>
-                          {conversationItem.formatted.tool.name}(
-                          {conversationItem.formatted.tool.arguments})
-                        </div>
-                      )}
-                      {!conversationItem.formatted.tool &&
-                        conversationItem.role === 'user' && (
-                          <div>
-                            {conversationItem.formatted.transcript ||
-                              (conversationItem.formatted.audio?.length
-                                ? '(awaiting transcript)'
-                                : conversationItem.formatted.text ||
-                                  '(item sent)')}
-                          </div>
-                        )}
-                      {!conversationItem.formatted.tool &&
-                        conversationItem.role === 'assistant' && (
-                          <div>
-                            {conversationItem.formatted.transcript ||
-                              conversationItem.formatted.text ||
-                              '(truncated)'}
-                          </div>
-                        )}
-                      {conversationItem.formatted.file && (
-                        <audio
-                          src={conversationItem.formatted.file.url}
-                          controls
-                        />
-                      )}
+                    <div
+                      className="close absolute top-0 -right-5 bg-[#aaa] text-white flex rounded-2xl p-0.5 cursor-pointer hover:bg-[#696969] hidden group-hover:flex"
+                      onClick={() => deleteConversationItem(conversationItem.id)}
+                    >
+                      <X className="stroke-[3] w-3 h-3" />
                     </div>
                   </div>
-                );
-              })}
+                  <div className="speaker-content text-[#18181b] overflow-hidden break-words">
+                    {conversationItem.type === 'function_call_output' && (
+                      <div>{conversationItem.formatted.output}</div>
+                    )}
+                    {!!conversationItem.formatted.tool && (
+                      <div>
+                        {conversationItem.formatted.tool.name}(
+                        {conversationItem.formatted.tool.arguments})
+                      </div>
+                    )}
+                    {!conversationItem.formatted.tool && conversationItem.role === 'user' && (
+                      <div>
+                        {conversationItem.formatted.transcript ||
+                          (conversationItem.formatted.audio?.length
+                            ? '(awaiting transcript)'
+                            : conversationItem.formatted.text || '(item sent)')}
+                      </div>
+                    )}
+                    {!conversationItem.formatted.tool && conversationItem.role === 'assistant' && (
+                      <div>
+                        {conversationItem.formatted.transcript ||
+                          conversationItem.formatted.text || '(truncated)'}
+                      </div>
+                    )}
+                    {conversationItem.formatted.file && (
+                      <audio src={conversationItem.formatted.file.url} controls />
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-          <div className="content-actions">
+
+          <div className="content-actions flex-grow-0 flex-shrink-0 flex items-center justify-center gap-4">
             <Toggle
               defaultValue={false}
               labels={['manual', 'vad']}
               values={['none', 'server_vad']}
               onChange={(_, value) => changeTurnEndType(value)}
             />
-            <div className="spacer" />
+            <div className="spacer flex-grow" />
             {isConnected && canPushToTalk && (
               <Button
                 label={isRecording ? 'release to send' : 'push to talk'}
@@ -679,51 +637,59 @@ export function ConsolePage() {
                 onMouseUp={stopRecording}
               />
             )}
-            <div className="spacer" />
+            <div className="spacer flex-grow" />
             <Button
               label={isConnected ? 'disconnect' : 'connect'}
               iconPosition={isConnected ? 'end' : 'start'}
               icon={isConnected ? X : Zap}
               buttonStyle={isConnected ? 'regular' : 'action'}
-              onClick={
-                isConnected ? disconnectConversation : connectConversation
-              }
+              onClick={isConnected ? disconnectConversation : connectConversation}
             />
           </div>
         </div>
-        <div className="content-right">
-          <div className="content-block map">
-            <div className="content-block-title">get_weather()</div>
-            <div className="content-block-title bottom">
+
+        <div className="content-right w-[300px] flex-shrink-0 flex flex-col ml-6 gap-6">
+          <div className="content-block map rounded-2xl flex-grow flex-shrink-0 overflow-hidden relative">
+            <div className="content-block-title absolute flex items-center justify-center leading-8 top-4 left-4 px-4 py-1 bg-white rounded-[1000px] min-h-[32px] z-[9999] text-center whitespace-pre">
+              get_weather()
+            </div>
+            <div className="content-block-title bottom absolute flex items-center justify-center leading-8 bottom-4 right-4 px-4 py-1 bg-white rounded-[1000px] min-h-[32px] z-[9999] text-center whitespace-pre">
               {marker?.location || 'not yet retrieved'}
               {!!marker?.temperature && (
                 <>
                   <br />
-                  🌡️ {marker.temperature.value} {marker.temperature.units}
+                  {marker.temperature.value}
+                  {marker.temperature.units}
                 </>
               )}
               {!!marker?.wind_speed && (
                 <>
-                  {' '}
-                  🍃 {marker.wind_speed.value} {marker.wind_speed.units}
+                  <br />
+                  {marker.wind_speed.value}
+                  {marker.wind_speed.units}
                 </>
               )}
             </div>
-            <div className="content-block-body full">
-              {coords && (
-                <Map
-                  center={[coords.lat, coords.lng]}
-                  location={coords.location}
-                />
-              )}
-            </div>
+            <Map center={[coords?.lat || 0, coords?.lng || 0]} />
           </div>
-          <div className="content-block kv">
-            <div className="content-block-title">set_memory()</div>
-            <div className="content-block-body content-kv">
+
+          <div className="content-block kv h-[250px] max-h-[250px] whitespace-pre bg-[#ececf1] rounded-2xl flex-grow flex-shrink-0 overflow-hidden relative">
+            <div className="content-block-title absolute flex items-center justify-center leading-8 top-4 left-4 px-4 py-1 bg-white rounded-[1000px] min-h-[32px] z-[9999] text-center whitespace-pre">
+              set_memory()
+            </div>
+            <div className="content-block-body p-4 mt-14">
               {JSON.stringify(memoryKv, null, 2)}
             </div>
           </div>
+        </div>
+      </div>
+
+      <div className="visualization absolute flex bottom-1 right-2 p-1 rounded-2xl z-10 gap-0.5">
+        <div className="visualization-entry client relative flex items-center h-10 w-[100px] gap-1 text-[#0099ff]">
+          <canvas ref={clientCanvasRef} className="w-full h-full text-current" />
+        </div>
+        <div className="visualization-entry server relative flex items-center h-10 w-[100px] gap-1 text-[#009900]">
+          <canvas ref={serverCanvasRef} className="w-full h-full text-current" />
         </div>
       </div>
     </div>

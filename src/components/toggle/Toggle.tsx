@@ -1,7 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 
-import './Toggle.scss';
-
 export function Toggle({
   defaultValue = false,
   values,
@@ -49,18 +47,19 @@ export function Toggle({
       data-component="Toggle"
       onClick={toggleValue}
       data-enabled={value.toString()}
+      className="relative flex items-center gap-2 cursor-pointer overflow-hidden bg-[#ececf1] text-[#101010] h-10 rounded-[1000px] hover:bg-[#d8d8d8]"
     >
       {labels && (
-        <div className="label left" ref={leftRef}>
+        <div ref={leftRef} className="label left relative text-[#666] transition-colors duration-100 px-4 z-[2] select-none data-[enabled=false]:text-white">
           {labels[0]}
         </div>
       )}
       {labels && (
-        <div className="label right" ref={rightRef}>
+        <div ref={rightRef} className="label right relative text-[#666] transition-colors duration-100 px-4 z-[2] select-none -ml-2 data-[enabled=true]:text-white">
           {labels[1]}
         </div>
       )}
-      <div className="toggle-background" ref={bgRef}></div>
+      <div ref={bgRef} className="toggle-background bg-[#101010] absolute top-0 left-0 bottom-0 z-[1] rounded-[1000px] transition-all duration-100"></div>
     </div>
   );
 }

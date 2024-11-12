@@ -1,6 +1,5 @@
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import { LatLngTuple } from 'leaflet';
-import './Map.scss';
 
 function ChangeView({ center, zoom }: { center: LatLngTuple; zoom: number }) {
   const map = useMap();
@@ -16,7 +15,7 @@ export function Map({
   location?: string;
 }) {
   return (
-    <div data-component="Map">
+    <div data-component="Map" className="absolute w-full h-full [&_.leaflet-container]:w-full [&_.leaflet-container]:h-full">
       <MapContainer
         center={center}
         zoom={11}
