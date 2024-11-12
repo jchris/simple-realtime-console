@@ -1,8 +1,8 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 
-import { RealtimeClient } from '@openai/realtime-api-beta';
+import { useRealtimeClient } from '../hooks/useRealtimeClient';
+import { useWavTools } from '../hooks/useWavTools';
 import { ItemType } from '@openai/realtime-api-beta/dist/lib/client.js';
-import { WavRecorder, WavStreamPlayer } from '../lib/wavtools/index.js';
 import { instructions } from '../utils/conversation_config.js';
 import { WavRenderer } from '../utils/wav_renderer';
 
@@ -31,18 +31,24 @@ export function ConsolePage() {
     localStorage.setItem('tmp::voice_api_key', apiKey);
   }
 
-  const wavRecorderRef = useRef<WavRecorder>(
-    new WavRecorder({ sampleRate: 24000 })
-  );
-  const wavStreamPlayerRef = useRef<WavStreamPlayer>(
-    new WavStreamPlayer({ sampleRate: 24000 })
-  );
-  const clientRef = useRef<RealtimeClient>(
-    new RealtimeClient({
-      apiKey: apiKey,
-      dangerouslyAllowAPIKeyInBrowser: true,
-    })
-  );
+  const {
+    client,
+    isConnected,
+    currentId,
+    connect,
+    disconnect,
+    setIsConnected,
+    setCurrentId,
+  } = useRealtimeClient(apiKey);
+  const {
+    wavRecorder,
+    wavStreamPlayer,
+    connectRecorder,
+    startRecording,
+    stopRecording,
+    connectPlayer,
+    interruptPlayer,
+  } = useWavTools();
 
   const clientCanvasRef = useRef<HTMLCanvasElement>(null);
   const serverCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -55,12 +61,10 @@ export function ConsolePage() {
   const [expandedEvents, setExpandedEvents] = useState<{
     [key: string]: boolean;
   }>({});
-  const [isConnected, setIsConnected] = useState(false);
   const [memoryKv, setMemoryKv] = useState<{ [key: string]: any }>({
     userName: 'swyx',
     todaysDate: new Date().toISOString().split('T')[0],
   });
-  const [currentId, setCurrentId] = useState<string | null>(null);
 
   const formatTime = useCallback((timestamp: string) => {
     const startTime = startTimeRef.current;
@@ -91,23 +95,15 @@ export function ConsolePage() {
 
   const connectConversation = useCallback(async () => {
     try {
-      const client = clientRef.current;
-      const wavRecorder = wavRecorderRef.current;
-      const wavStreamPlayer = wavStreamPlayerRef.current;
-
       startTimeRef.current = new Date().toISOString();
 
-      if (!client.isConnected()) {
-        await client.connect();
-      }
+      await connect();
 
       // Only proceed with other setup if connection successful
-      setIsConnected(true);
       setRealtimeEvents([]);
       setItems(client.conversation.getItems());
 
-      await wavRecorder.begin();
-      await wavStreamPlayer.connect();
+      await connectPlayer();
 
       client.sendUserMessageContent([
         {
@@ -116,55 +112,33 @@ export function ConsolePage() {
         },
       ]);
 
-      // Configure VAD to be less sensitive
       client.updateSession({
         turn_detection: {
           type: 'server_vad',
-          // config: {
-          //   min_speech_duration: 0.5,  // Increase minimum speech duration
-          //   speech_pad_ms: 500,        // Add more padding after speech
-          //   min_silence_duration: 1.0,  // Wait longer for silence before cutting off
-          // }
         },
       });
 
-      await wavRecorder.record((data) => {
+      await startRecording((data) => {
         if (client.isConnected()) {
           client.appendInputAudio(data.mono);
         }
       });
     } catch (error) {
       console.error('Connection error:', error);
-      setIsConnected(false);
     }
-  }, []);
+  }, [connect, client, connectPlayer, startRecording, setItems]);
 
   const disconnectConversation = useCallback(async () => {
     try {
-      const client = clientRef.current;
-      const wavRecorder = wavRecorderRef.current;
-      const wavStreamPlayer = wavStreamPlayerRef.current;
-
-      // Stop recording first
-      await wavRecorder.end();
-      await wavStreamPlayer.interrupt();
-
-      // // Then clean up client
-      // if (client.isConnected()) {
-      //   await client.disconnect();
-      // }
-
-      // Finally update state
+      await stopRecording();
+      await interruptPlayer();
+      await disconnect();
       setIsConnected(false);
-      // setRealtimeEvents([]);
-      // setItems([]);
-      // setMemoryKv({});
     } catch (error) {
       console.error('Disconnection error:', error);
-      // Force state reset even if there's an error
       setIsConnected(false);
     }
-  }, []);
+  }, [disconnect, stopRecording, interruptPlayer]);
 
   useEffect(() => {
     if (eventsScrollRef.current) {
@@ -190,11 +164,9 @@ export function ConsolePage() {
   useEffect(() => {
     let isLoaded = true;
 
-    const wavRecorder = wavRecorderRef.current;
     const clientCanvas = clientCanvasRef.current;
     let clientCtx: CanvasRenderingContext2D | null = null;
 
-    const wavStreamPlayer = wavStreamPlayerRef.current;
     const serverCanvas = serverCanvasRef.current;
     let serverCtx: CanvasRenderingContext2D | null = null;
 
@@ -255,9 +227,6 @@ export function ConsolePage() {
   }, []);
 
   useEffect(() => {
-    const wavStreamPlayer = wavStreamPlayerRef.current;
-    const client = clientRef.current;
-
     client.updateSession({
       instructions:
         instructions + ' Memory: ' + JSON.stringify(memoryKv, null, 2),
@@ -472,19 +441,10 @@ export function ConsolePage() {
           {isConnected && (
             <span className="flex">
               <Button
-                onClick={() => clientRef.current.createResponse()}
+                onClick={() => client.createResponse()}
                 buttonStyle="action"
               >
-                Create Response
-              </Button>
-              <Button
-                onClick={() =>
-                  clientRef.current.cancelResponse(currentId || '')
-                }
-                buttonStyle="alert"
-                disabled={!currentId}
-              >
-                Cancel Response
+                Force Reply
               </Button>
             </span>
           )}
