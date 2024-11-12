@@ -3,10 +3,24 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { useRealtimeClient } from '../hooks/useRealtimeClient';
 import { useWavTools } from '../hooks/useWavTools';
 import { ItemType } from '@openai/realtime-api-beta/dist/lib/client.js';
-import { instructions } from '../utils/conversation_config.js';
 import { WavRenderer } from '../utils/wav_renderer';
 
-import { Button } from '../components/button/Button';
+const instructions = `System settings:
+Tool use: enabled.
+
+Instructions:
+- You are an artificial intelligence agent responsible for helping test realtime voice capabilities
+- Please make sure to respond with a helpful voice via audio
+- Be kind, helpful, and curteous
+- It is okay to ask the user questions
+- Use tools and functions you have available liberally, it is part of the training apparatus
+- Be open to exploration and conversation
+- Remember: this is just for fun and testing!
+
+Personality:
+- Be upbeat and genuine
+- Try speaking quickly as if excited
+`;
 
 /**
  * Type for all event logs
@@ -271,26 +285,31 @@ export function ConsolePage() {
     });
 
     client.on('realtime.event', (event: any) => {
-      if (
-        event.source === 'server' &&
-        [
-          'conversation.item.input_audio_transcription.completed',
-          'response.audio_transcript.done',
-          'response.cancel',
-        ].includes(event.event.type)
-      ) {
-        // no op - we want to show these server events
-      } else {
-        console.log('suppressed event1 ', event.event.type, event);
-        return;
+      if (event.source === 'server') {
+        if (
+          [
+            'conversation.item.input_audio_transcription.completed',
+            'response.audio_transcript.done',
+            'response.cancel',
+            'response.function_call_arguments.done',
+          ].includes(event.event.type)
+        ) {
+          // no op - we want to show these server events
+        } else {
+          console.log('suppressed event1 ', event.event.type, event);
+          return;
+        }
       }
+
       if (
         event.source === 'client' &&
         event.event.type === 'input_audio_buffer.append' // DO NOT show these events as they tend to just be super noisy
       ) {
-        console.log('suppressed event2 ', event.event.type, event);
+        // console.log('suppressed event2 ', event.event.type, event); // its so noisy that i'm just gonna REALLY suppress this
         return;
       }
+
+      // hacky final adjustment
       if (
         event.event.type ===
         'conversation.item.input_audio_transcription.completed'
@@ -427,25 +446,25 @@ export function ConsolePage() {
     <div className="flex flex-col h-screen">
       <div className="flex-none p-4 border-b border-gray-200 flex items-center justify-between">
         <div className="flex items-center space-x-4">
-          <Button
+          <button
             onClick={isConnected ? disconnectConversation : connectConversation}
             disabled={!apiKey}
-            className={`px-4 py-2 rounded-md ${
+            className={`flex items-center gap-2 font-['Roboto_Mono'] text-xs font-normal border-none rounded-[1000px] px-6 min-h-[42px] transition-all duration-100 outline-none disabled:text-[#999] enabled:cursor-pointer px-4 py-2 rounded-md ${
               isConnected
                 ? 'bg-red-500 hover:bg-red-600 text-white'
                 : 'bg-blue-500 hover:bg-blue-600 text-white'
             }`}
           >
             {isConnected ? 'Disconnect' : 'Connect'}
-          </Button>
+          </button>
           {isConnected && (
             <span className="flex">
-              <Button
+              <button
+                className="flex items-center gap-2 font-['Roboto_Mono'] text-xs font-normal border-none rounded-[1000px] px-6 min-h-[42px] transition-all duration-100 outline-none disabled:text-[#999] enabled:cursor-pointer bg-[#101010] text-[#ececf1] hover:enabled:bg-[#404040]"
                 onClick={() => client.createResponse()}
-                buttonStyle="action"
               >
                 Force Reply
-              </Button>
+              </button>
             </span>
           )}
         </div>
@@ -519,7 +538,11 @@ export function ConsolePage() {
                       </div>
                       <div className="text-xs text-gray-600">
                         {(event.event.event.transcript &&
-                          '"' + event.event.event.transcript + '"') || (
+                          '"' + event.event.event.transcript + '"') || 
+                          (event.event.event.type === "response.function_call_arguments.done" &&
+                            event.event.event.name + '('  + event.event.event.arguments + ')') || 
+                          
+                          (
                             <span className="font-mono">
                               {event.event.event.type}
                             </span>
