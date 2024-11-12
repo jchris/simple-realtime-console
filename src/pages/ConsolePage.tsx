@@ -15,7 +15,7 @@ interface RealtimeEvent {
   time: string;
   source: 'client' | 'server';
   count?: number;
-  event: { 
+  event: {
     event_id?: string;
     type?: string;
     [key: string]: any;
@@ -23,7 +23,10 @@ interface RealtimeEvent {
 }
 
 export function ConsolePage() {
-  const apiKey = localStorage.getItem('tmp::voice_api_key') || prompt('OpenAI API Key') || '';
+  const apiKey =
+    localStorage.getItem('tmp::voice_api_key') ||
+    prompt('OpenAI API Key') ||
+    '';
   if (apiKey !== '') {
     localStorage.setItem('tmp::voice_api_key', apiKey);
   }
@@ -53,7 +56,11 @@ export function ConsolePage() {
     [key: string]: boolean;
   }>({});
   const [isConnected, setIsConnected] = useState(false);
-  const [memoryKv, setMemoryKv] = useState<{ [key: string]: any }>({});
+  const [memoryKv, setMemoryKv] = useState<{ [key: string]: any }>({
+    userName: 'swyx',
+    todaysDate: new Date().toISOString().split('T')[0],
+  });
+  const [currentId, setCurrentId] = useState<string | null>(null);
 
   const formatTime = useCallback((timestamp: string) => {
     const startTime = startTimeRef.current;
@@ -89,8 +96,11 @@ export function ConsolePage() {
       const wavStreamPlayer = wavStreamPlayerRef.current;
 
       startTimeRef.current = new Date().toISOString();
-      await client.connect();
-      
+
+      if (!client.isConnected()) {
+        await client.connect();
+      }
+
       // Only proceed with other setup if connection successful
       setIsConnected(true);
       setRealtimeEvents([]);
@@ -98,7 +108,7 @@ export function ConsolePage() {
 
       await wavRecorder.begin();
       await wavStreamPlayer.connect();
-      
+
       client.sendUserMessageContent([
         {
           type: `input_text`,
@@ -115,7 +125,7 @@ export function ConsolePage() {
           //   speech_pad_ms: 500,        // Add more padding after speech
           //   min_silence_duration: 1.0,  // Wait longer for silence before cutting off
           // }
-        }
+        },
       });
 
       await wavRecorder.record((data) => {
@@ -138,17 +148,17 @@ export function ConsolePage() {
       // Stop recording first
       await wavRecorder.end();
       await wavStreamPlayer.interrupt();
-      
-      // Then clean up client
-      if (client.isConnected()) {
-        await client.disconnect();
-      }
+
+      // // Then clean up client
+      // if (client.isConnected()) {
+      //   await client.disconnect();
+      // }
 
       // Finally update state
       setIsConnected(false);
-      setRealtimeEvents([]);
-      setItems([]);
-      setMemoryKv({});
+      // setRealtimeEvents([]);
+      // setItems([]);
+      // setMemoryKv({});
     } catch (error) {
       console.error('Disconnection error:', error);
       // Force state reset even if there's an error
@@ -248,7 +258,10 @@ export function ConsolePage() {
     const wavStreamPlayer = wavStreamPlayerRef.current;
     const client = clientRef.current;
 
-    client.updateSession({ instructions: instructions });
+    client.updateSession({
+      instructions:
+        instructions + ' Memory: ' + JSON.stringify(memoryKv, null, 2),
+    });
     client.updateSession({ input_audio_transcription: { model: 'whisper-1' } });
 
     client.addTool(
@@ -289,13 +302,32 @@ export function ConsolePage() {
     });
 
     client.on('realtime.event', (event: any) => {
-      if (event.source === 'server' && !event.event.type?.endsWith('done')) {
-        console.log('suppressed event1', event);
+      if (
+        event.source === 'server' &&
+        [
+          'conversation.item.input_audio_transcription.completed',
+          'response.audio_transcript.done',
+          'response.cancel',
+        ].includes(event.event.type)
+      ) {
+        // no op - we want to show these server events
+      } else {
+        console.log('suppressed event1 ', event.event.type, event);
         return;
       }
-      if (event.source === 'client') {
-        console.log('suppressed event2', event);
+      if (
+        event.source === 'client' &&
+        event.event.type === 'input_audio_buffer.append' // DO NOT show these events as they tend to just be super noisy
+      ) {
+        console.log('suppressed event2 ', event.event.type, event);
         return;
+      }
+      if (
+        event.event.type ===
+        'conversation.item.input_audio_transcription.completed'
+      ) {
+        // this is the user's voice transcript
+        event.source = 'client'; // force it to render as client even tho its technically not
       }
       setRealtimeEvents((prev) => [
         ...prev,
@@ -384,6 +416,24 @@ export function ConsolePage() {
       }
     });
 
+    client.on(
+      'conversation.item.appended',
+      ({ item }: { item: { id: string; status: string } }) => {
+        if (item.status === 'in_progress') {
+          setCurrentId(item.id);
+        }
+      }
+    );
+
+    client.on(
+      'conversation.item.completed',
+      ({ item }: { item: { id: string; status: string } }) => {
+        if (item.status === 'completed') {
+          setCurrentId(null);
+        }
+      }
+    );
+
     return () => {
       client.off('error');
       client.off('realtime.event');
@@ -393,6 +443,8 @@ export function ConsolePage() {
       client.off('audio');
       client.off('conversation.updated');
       client.off('conversation.interrupted');
+      client.off('conversation.item.appended');
+      client.off('conversation.item.completed');
 
       try {
         client.removeTool('set_memory');
@@ -417,6 +469,25 @@ export function ConsolePage() {
           >
             {isConnected ? 'Disconnect' : 'Connect'}
           </Button>
+          {isConnected && (
+            <span className="flex">
+              <Button
+                onClick={() => clientRef.current.createResponse()}
+                buttonStyle="action"
+              >
+                Create Response
+              </Button>
+              <Button
+                onClick={() =>
+                  clientRef.current.cancelResponse(currentId || '')
+                }
+                buttonStyle="alert"
+                disabled={!currentId}
+              >
+                Cancel Response
+              </Button>
+            </span>
+          )}
         </div>
         <div className="flex items-center space-x-4">
           <button
@@ -451,7 +522,7 @@ export function ConsolePage() {
             <div className="p-4">
               <div className="mb-4">
                 <h3 className="text-sm font-medium text-gray-700">Memory</h3>
-                <pre className="mt-2 text-xs">
+                <pre className="mt-2 text-xs text-wrap">
                   {JSON.stringify(memoryKv, null, 2)}
                 </pre>
               </div>
