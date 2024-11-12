@@ -1,6 +1,6 @@
 # Simple Realtime Console
 
-https://github.com/openai/openai-realtime-console but it doesnt suck. simplest possible frontend only VAD server implementation, because the original was way too bloated.
+https://github.com/openai/openai-realtime-console but it doesnt suck. simplest possible frontend only VAD server implementation, because the original was way too bloated. You can [see the diffs here](https://github.com/openai/openai-realtime-console/compare/main...swyxio:simple-realtime-console:main?expand=1) - we are at -1200 LOC deleted
 
 see diff
 
