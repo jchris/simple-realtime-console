@@ -40,13 +40,12 @@ Realtime API. You'll be prompted on startup to enter it. It will be saved via `l
 changed at any time from the UI.
 
 To start a session you'll need to **connect**. This will require microphone access.
-We onlyhave **vad** (Voice Activity Detection)
-conversation mode here, and switch between them at any time.
+We only have **vad** (Voice Activity Detection) conversation mode here.
 
 There is only one function enabled;
 
 - `set_memory`: You can ask the model to remember information for you, and it will store it in
-  a JSON blob on the left.
+  a JSON blob on the left. **We've added some basic initial memory for the user to mess with.**
 
-You can freely interrupt the model at any time in push-to-talk or VAD mode.
+You can freely interrupt the model at any time.
 
