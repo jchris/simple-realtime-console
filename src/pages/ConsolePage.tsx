@@ -242,7 +242,8 @@ export function ConsolePage() {
     client.addTool(
       {
         name: 'set_memory',
-        description: 'Saves important data about the user into memory.',
+        description:
+          'Saves important data about the user into memory. If keys are close, prefer overwriting keys rather than creating new keys.',
         parameters: {
           type: 'object',
           properties: {
@@ -363,8 +364,8 @@ export function ConsolePage() {
       }
     });
 
-    // we omitted all cleanup code from https://github.com/openai/openai-realtime-console bc not needed for simple demo
-    // return () => { // remember to add  back if using in real scenario, eg client.off('error'); and client.removeTool('set_memory');
+    // we omitted "proper" cleanup code bc not needed for simple demo but rememver to add in real life to prevent mem leak
+    return () => void client.removeTool('set_memory'); // remember to add back other cleanup code as needed eg client.off('error');
   }, []); // Empty dependency array since we want this to run only once
 
   return (
