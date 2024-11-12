@@ -1,8 +1,8 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 
 import { useRealtimeClient } from '../hooks/useRealtimeClient';
-import { useWavTools } from '../hooks/useWavTools';
 import { ItemType } from '@openai/realtime-api-beta/dist/lib/client.js';
+import { WavRecorder, WavStreamPlayer } from '../lib/wavtools/index.js';
 import { WavRenderer } from '../utils/wav_renderer';
 
 const instructions = `System settings:
@@ -45,24 +45,15 @@ export function ConsolePage() {
     localStorage.setItem('tmp::voice_api_key', apiKey);
   }
 
-  const {
-    client,
-    isConnected,
-    currentId,
-    connect,
-    disconnect,
-    setIsConnected,
-    setCurrentId,
-  } = useRealtimeClient(apiKey);
-  const {
-    wavRecorder,
-    wavStreamPlayer,
-    connectRecorder,
-    startRecording,
-    stopRecording,
-    connectPlayer,
-    interruptPlayer,
-  } = useWavTools();
+  const { client, isConnected, connect, disconnect, setIsConnected } =
+    useRealtimeClient(apiKey);
+
+  const wavRecorderRef = useRef<WavRecorder>(
+    new WavRecorder({ sampleRate: 24000 })
+  );
+  const wavStreamPlayerRef = useRef<WavStreamPlayer>(
+    new WavStreamPlayer({ sampleRate: 24000 })
+  );
 
   const clientCanvasRef = useRef<HTMLCanvasElement>(null);
   const serverCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -117,7 +108,7 @@ export function ConsolePage() {
       setRealtimeEvents([]);
       setItems(client.conversation.getItems());
 
-      await connectPlayer();
+      await wavStreamPlayerRef.current.connect();
 
       client.sendUserMessageContent([
         {
@@ -132,7 +123,8 @@ export function ConsolePage() {
         },
       });
 
-      await startRecording((data) => {
+      await wavRecorderRef.current.begin(); // Ensure the recorder is connected before recording
+      await wavRecorderRef.current.record((data) => {
         if (client.isConnected()) {
           client.appendInputAudio(data.mono);
         }
@@ -140,19 +132,19 @@ export function ConsolePage() {
     } catch (error) {
       console.error('Connection error:', error);
     }
-  }, [connect, client, connectPlayer, startRecording, setItems]);
+  }, [connect, client, setItems]);
 
   const disconnectConversation = useCallback(async () => {
     try {
-      await stopRecording();
-      await interruptPlayer();
+      await wavRecorderRef.current.end();
+      await wavStreamPlayerRef.current.interrupt();
       await disconnect();
       setIsConnected(false);
     } catch (error) {
       console.error('Disconnection error:', error);
       setIsConnected(false);
     }
-  }, [disconnect, stopRecording, interruptPlayer]);
+  }, [disconnect]);
 
   useEffect(() => {
     if (eventsScrollRef.current) {
@@ -194,8 +186,8 @@ export function ConsolePage() {
           clientCtx = clientCtx || clientCanvas.getContext('2d');
           if (clientCtx) {
             clientCtx.clearRect(0, 0, clientCanvas.width, clientCanvas.height);
-            const result = wavRecorder.recording
-              ? wavRecorder.getFrequencies('voice')
+            const result = wavRecorderRef.current.recording
+              ? wavRecorderRef.current.getFrequencies('voice')
               : { values: new Float32Array([0]) };
             WavRenderer.drawBars(
               clientCanvas,
@@ -216,8 +208,8 @@ export function ConsolePage() {
           serverCtx = serverCtx || serverCanvas.getContext('2d');
           if (serverCtx) {
             serverCtx.clearRect(0, 0, serverCanvas.width, serverCanvas.height);
-            const result = wavStreamPlayer.analyser
-              ? wavStreamPlayer.getFrequencies('voice')
+            const result = wavStreamPlayerRef.current.analyser
+              ? wavStreamPlayerRef.current.getFrequencies('voice')
               : { values: new Float32Array([0]) };
             WavRenderer.drawBars(
               serverCanvas,
@@ -327,41 +319,8 @@ export function ConsolePage() {
       ]);
     });
 
-    client.on('connected', () => {
-      setRealtimeEvents((prev) => [
-        ...prev,
-        {
-          time: new Date().toISOString(),
-          source: 'client',
-          event: { type: 'connected' },
-        },
-      ]);
-    });
-
-    client.on('disconnected', () => {
-      setRealtimeEvents((prev) => [
-        ...prev,
-        {
-          time: new Date().toISOString(),
-          source: 'client',
-          event: { type: 'disconnected' },
-        },
-      ]);
-    });
-
-    client.on('message', (message: { role: string; [key: string]: any }) => {
-      setRealtimeEvents((prev) => [
-        ...prev,
-        {
-          time: new Date().toISOString(),
-          source: message.role === 'assistant' ? 'server' : 'client',
-          event: message,
-        },
-      ]);
-    });
-
     client.on('audio', (audio: { audio: Uint8Array }) => {
-      wavStreamPlayer.add16BitPCM(audio.audio);
+      wavStreamPlayerRef.current.add16BitPCM(audio.audio);
     });
 
     client.on(
@@ -382,7 +341,7 @@ export function ConsolePage() {
       }) => {
         const items = client.conversation.getItems();
         if (delta?.audio) {
-          wavStreamPlayer.add16BitPCM(delta.audio, item.id);
+          wavStreamPlayerRef.current.add16BitPCM(delta.audio, item.id);
         }
         if (item.status === 'completed' && item.formatted.audio?.length) {
           const wavFile = await WavRecorder.decode(
@@ -397,49 +356,15 @@ export function ConsolePage() {
     );
 
     client.on('conversation.interrupted', async () => {
-      const trackSampleOffset = await wavStreamPlayer.interrupt();
+      const trackSampleOffset = await wavStreamPlayerRef.current.interrupt();
       if (trackSampleOffset?.trackId) {
         const { trackId, offset } = trackSampleOffset;
         await client.cancelResponse(trackId, offset);
       }
     });
 
-    client.on(
-      'conversation.item.appended',
-      ({ item }: { item: { id: string; status: string } }) => {
-        if (item.status === 'in_progress') {
-          setCurrentId(item.id);
-        }
-      }
-    );
-
-    client.on(
-      'conversation.item.completed',
-      ({ item }: { item: { id: string; status: string } }) => {
-        if (item.status === 'completed') {
-          setCurrentId(null);
-        }
-      }
-    );
-
-    return () => {
-      client.off('error');
-      client.off('realtime.event');
-      client.off('connected');
-      client.off('disconnected');
-      client.off('message');
-      client.off('audio');
-      client.off('conversation.updated');
-      client.off('conversation.interrupted');
-      client.off('conversation.item.appended');
-      client.off('conversation.item.completed');
-
-      try {
-        client.removeTool('set_memory');
-      } catch (e) {
-        console.debug('Tool removal failed:', e);
-      }
-    };
+    // we omitted all cleanup code from https://github.com/openai/openai-realtime-console bc not needed for simple demo
+    // return () => { // remember to add  back if using in real scenario, eg client.off('error'); and client.removeTool('set_memory');
   }, []); // Empty dependency array since we want this to run only once
 
   return (
@@ -538,16 +463,18 @@ export function ConsolePage() {
                       </div>
                       <div className="text-xs text-gray-600">
                         {(event.event.event.transcript &&
-                          '"' + event.event.event.transcript + '"') || 
-                          (event.event.event.type === "response.function_call_arguments.done" &&
-                            event.event.event.name + '('  + event.event.event.arguments + ')') || 
-                          
-                          (
+                          '"' + event.event.event.transcript + '"') ||
+                          (event.event.event.type ===
+                            'response.function_call_arguments.done' &&
+                            event.event.event.name +
+                              '(' +
+                              event.event.event.arguments +
+                              ')') || (
                             <span className="font-mono">
                               {event.event.event.type}
                             </span>
                           ) ||
-                          console.log(event.event) ||
+                          // console.log(event.event) ||
                           JSON.stringify(event.event)}
                       </div>
                       {expandedEvents[i] && (
