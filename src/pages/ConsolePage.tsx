@@ -1,9 +1,9 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 
-import { useRealtimeClient } from '../hooks/useRealtimeClient';
+import { RealtimeEvent, useRealtimeClient } from '../utils/useRealtimeClient';
 import { ItemType } from '@openai/realtime-api-beta/dist/lib/client.js';
-import { WavRecorder, WavStreamPlayer } from '../lib/wavtools/index.js';
-import { WavRenderer } from '../utils/wav_renderer';
+import { useWaveRenderer } from '../utils/useWaveRenderer';
+import { useUIScroller } from '../utils/useUIScroller';
 
 const instructions = `System settings:
 Tool use: enabled.
@@ -22,20 +22,6 @@ Personality:
 - Try speaking quickly as if excited
 `;
 
-/**
- * Type for all event logs
- */
-interface RealtimeEvent {
-  time: string;
-  source: 'client' | 'server';
-  count?: number;
-  event: {
-    event_id?: string;
-    type?: string;
-    [key: string]: any;
-  };
-}
-
 export function ConsolePage() {
   const apiKey =
     localStorage.getItem('tmp::voice_api_key') ||
@@ -45,31 +31,60 @@ export function ConsolePage() {
     localStorage.setItem('tmp::voice_api_key', apiKey);
   }
 
-  const { client, isConnected, connect, disconnect, setIsConnected } =
-    useRealtimeClient(apiKey);
-
-  const wavRecorderRef = useRef<WavRecorder>(
-    new WavRecorder({ sampleRate: 24000 })
-  );
-  const wavStreamPlayerRef = useRef<WavStreamPlayer>(
-    new WavStreamPlayer({ sampleRate: 24000 })
-  );
-
-  const clientCanvasRef = useRef<HTMLCanvasElement>(null);
-  const serverCanvasRef = useRef<HTMLCanvasElement>(null);
-  const eventsScrollHeightRef = useRef(0);
-  const eventsScrollRef = useRef<HTMLDivElement>(null);
   const startTimeRef = useRef<string>(new Date().toISOString());
 
   const [items, setItems] = useState<ItemType[]>([]);
   const [realtimeEvents, setRealtimeEvents] = useState<RealtimeEvent[]>([]);
-  const [expandedEvents, setExpandedEvents] = useState<{
-    [key: string]: boolean;
-  }>({});
+
   const [memoryKv, setMemoryKv] = useState<{ [key: string]: any }>({
     userName: 'swyx',
     todaysDate: new Date().toISOString().split('T')[0],
   });
+
+  const { eventsScrollRef } = useUIScroller(items, realtimeEvents);
+  const {
+    clientCanvasRef,
+    serverCanvasRef,
+    wavRecorderRef,
+    wavStreamPlayerRef,
+  } = useWaveRenderer();
+
+  const { client, isConnected, connectConversation, disconnectConversation } =
+    useRealtimeClient(
+      apiKey,
+      startTimeRef,
+      setRealtimeEvents,
+      wavStreamPlayerRef,
+      wavRecorderRef,
+      instructions + ' Memory: ' + JSON.stringify(memoryKv, null, 2),
+      [
+        {
+          schema: {
+            name: 'set_memory',
+            description:
+              'Saves important data about the user into memory. If keys are close, prefer overwriting keys rather than creating new keys.',
+            parameters: {
+              type: 'object',
+              properties: {
+                key: {
+                  type: 'string',
+                  description:
+                    'The key of the memory value. Always use lowercase and underscores, no other characters.',
+                },
+                value: {
+                  type: 'string',
+                  description: 'Value can be anything represented as a string',
+                },
+              },
+              required: ['key', 'value'],
+            },
+          },
+          async fn({ key, value }: { key: string; value: string }) {
+            setMemoryKv((prev) => ({ ...prev, [key]: value }));
+          },
+        },
+      ]
+    );
 
   const formatTime = useCallback((timestamp: string) => {
     const startTime = startTimeRef.current;
@@ -97,277 +112,6 @@ export function ConsolePage() {
       window.location.reload();
     }
   }, []);
-
-  const connectConversation = useCallback(async () => {
-    try {
-      startTimeRef.current = new Date().toISOString();
-
-      await connect();
-
-      // Only proceed with other setup if connection successful
-      setRealtimeEvents([]);
-      setItems(client.conversation.getItems());
-
-      await wavStreamPlayerRef.current.connect();
-
-      client.sendUserMessageContent([
-        {
-          type: `input_text`,
-          text: `Hello!`,
-        },
-      ]);
-
-      client.updateSession({
-        turn_detection: {
-          type: 'server_vad',
-        },
-      });
-
-      await wavRecorderRef.current.begin(); // Ensure the recorder is connected before recording
-      await wavRecorderRef.current.record((data) => {
-        if (client.isConnected()) {
-          client.appendInputAudio(data.mono);
-        }
-      });
-    } catch (error) {
-      console.error('Connection error:', error);
-    }
-  }, [connect, client, setItems]);
-
-  const disconnectConversation = useCallback(async () => {
-    try {
-      await wavRecorderRef.current.end();
-      await wavStreamPlayerRef.current.interrupt();
-      await disconnect();
-      setIsConnected(false);
-    } catch (error) {
-      console.error('Disconnection error:', error);
-      setIsConnected(false);
-    }
-  }, [disconnect]);
-
-  useEffect(() => {
-    if (eventsScrollRef.current) {
-      const eventsEl = eventsScrollRef.current;
-      const scrollHeight = eventsEl.scrollHeight;
-      if (scrollHeight !== eventsScrollHeightRef.current) {
-        eventsEl.scrollTop = scrollHeight;
-        eventsScrollHeightRef.current = scrollHeight;
-      }
-    }
-  }, [realtimeEvents]);
-
-  useEffect(() => {
-    const conversationEls = [].slice.call(
-      document.body.querySelectorAll('[data-conversation-content]')
-    );
-    for (const el of conversationEls) {
-      const conversationEl = el as HTMLDivElement;
-      conversationEl.scrollTop = conversationEl.scrollHeight;
-    }
-  }, [items]);
-
-  useEffect(() => {
-    let isLoaded = true;
-
-    const clientCanvas = clientCanvasRef.current;
-    let clientCtx: CanvasRenderingContext2D | null = null;
-
-    const serverCanvas = serverCanvasRef.current;
-    let serverCtx: CanvasRenderingContext2D | null = null;
-
-    const render = () => {
-      if (isLoaded) {
-        if (clientCanvas) {
-          if (!clientCanvas.width || !clientCanvas.height) {
-            clientCanvas.width = clientCanvas.offsetWidth;
-            clientCanvas.height = clientCanvas.offsetHeight;
-          }
-          clientCtx = clientCtx || clientCanvas.getContext('2d');
-          if (clientCtx) {
-            clientCtx.clearRect(0, 0, clientCanvas.width, clientCanvas.height);
-            const result = wavRecorderRef.current.recording
-              ? wavRecorderRef.current.getFrequencies('voice')
-              : { values: new Float32Array([0]) };
-            WavRenderer.drawBars(
-              clientCanvas,
-              clientCtx,
-              result.values,
-              '#0099ff',
-              10,
-              0,
-              8
-            );
-          }
-        }
-        if (serverCanvas) {
-          if (!serverCanvas.width || !serverCanvas.height) {
-            serverCanvas.width = serverCanvas.offsetWidth;
-            serverCanvas.height = serverCanvas.offsetHeight;
-          }
-          serverCtx = serverCtx || serverCanvas.getContext('2d');
-          if (serverCtx) {
-            serverCtx.clearRect(0, 0, serverCanvas.width, serverCanvas.height);
-            const result = wavStreamPlayerRef.current.analyser
-              ? wavStreamPlayerRef.current.getFrequencies('voice')
-              : { values: new Float32Array([0]) };
-            WavRenderer.drawBars(
-              serverCanvas,
-              serverCtx,
-              result.values,
-              '#009900',
-              10,
-              0,
-              8
-            );
-          }
-        }
-        window.requestAnimationFrame(render);
-      }
-    };
-    render();
-
-    return () => {
-      isLoaded = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    client.updateSession({
-      instructions:
-        instructions + ' Memory: ' + JSON.stringify(memoryKv, null, 2),
-    });
-    client.updateSession({ input_audio_transcription: { model: 'whisper-1' } });
-
-    client.addTool(
-      {
-        name: 'set_memory',
-        description:
-          'Saves important data about the user into memory. If keys are close, prefer overwriting keys rather than creating new keys.',
-        parameters: {
-          type: 'object',
-          properties: {
-            key: {
-              type: 'string',
-              description:
-                'The key of the memory value. Always use lowercase and underscores, no other characters.',
-            },
-            value: {
-              type: 'string',
-              description: 'Value can be anything represented as a string',
-            },
-          },
-          required: ['key', 'value'],
-        },
-      },
-      async ({ key, value }: { key: string; value: string }) => {
-        setMemoryKv((prev) => ({ ...prev, [key]: value }));
-      }
-    );
-
-    client.on('error', (error: Error) => {
-      console.error(error);
-      setRealtimeEvents((prev) => [
-        ...prev,
-        {
-          time: new Date().toISOString(),
-          source: 'client',
-          event: { type: 'error', error: error.message },
-        },
-      ]);
-    });
-
-    client.on('realtime.event', (event: any) => {
-      if (event.source === 'server') {
-        if (
-          [
-            'conversation.item.input_audio_transcription.completed',
-            'response.audio_transcript.done',
-            'response.cancel',
-            'response.function_call_arguments.done',
-          ].includes(event.event.type)
-        ) {
-          // no op - we want to show these server events
-        } else {
-          console.log('suppressed event1 ', event.event.type, event);
-          return;
-        }
-      }
-
-      if (
-        event.source === 'client' &&
-        event.event.type === 'input_audio_buffer.append' // DO NOT show these events as they tend to just be super noisy
-      ) {
-        // console.log('suppressed event2 ', event.event.type, event); // its so noisy that i'm just gonna REALLY suppress this
-        return;
-      }
-
-      // hacky final adjustment
-      if (
-        event.event.type ===
-        'conversation.item.input_audio_transcription.completed'
-      ) {
-        // this is the user's voice transcript
-        event.source = 'client'; // force it to render as client even tho its technically not
-      }
-      setRealtimeEvents((prev) => [
-        ...prev,
-        {
-          time: new Date().toISOString(),
-          source: event.source || 'client',
-          event: event,
-        },
-      ]);
-    });
-
-    client.on('audio', (audio: { audio: Uint8Array }) => {
-      wavStreamPlayerRef.current.add16BitPCM(audio.audio);
-    });
-
-    client.on(
-      'conversation.updated',
-      async ({
-        item,
-        delta,
-      }: {
-        item: {
-          id: string;
-          status: string;
-          formatted: {
-            audio?: Uint8Array;
-            file?: { url: string };
-          };
-        };
-        delta?: { audio?: Uint8Array };
-      }) => {
-        const items = client.conversation.getItems();
-        if (delta?.audio) {
-          wavStreamPlayerRef.current.add16BitPCM(delta.audio, item.id);
-        }
-        if (item.status === 'completed' && item.formatted.audio?.length) {
-          const wavFile = await WavRecorder.decode(
-            item.formatted.audio,
-            24000,
-            24000
-          );
-          item.formatted.file = wavFile;
-        }
-        setItems(items);
-      }
-    );
-
-    client.on('conversation.interrupted', async () => {
-      const trackSampleOffset = await wavStreamPlayerRef.current.interrupt();
-      if (trackSampleOffset?.trackId) {
-        const { trackId, offset } = trackSampleOffset;
-        await client.cancelResponse(trackId, offset);
-      }
-    });
-
-    // we omitted "proper" cleanup code bc not needed for simple demo but rememver to add in real life to prevent mem leak
-    return () => void client.removeTool('set_memory'); // remember to add back other cleanup code as needed eg client.off('error');
-  }, []); // Empty dependency array since we want this to run only once
-
   return (
     <div className="flex flex-col h-screen">
       <div className="flex-none p-4 border-b border-gray-200 flex items-center justify-between">
@@ -399,7 +143,7 @@ export function ConsolePage() {
             onClick={resetAPIKey}
             className="text-xs text-gray-500 hover:text-gray-700"
           >
-            {apiKey.slice(0, 4)}...{apiKey.slice(-4)}
+            Reset key: {apiKey.slice(0, 4)}...{apiKey.slice(-4)}
           </button>
         </div>
       </div>
@@ -446,43 +190,31 @@ export function ConsolePage() {
                         event.source === 'server' ? 'bg-green-50' : 'bg-blue-50'
                       }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono">
-                          {formatTime(event.time)}
-                        </span>
-                        <button
-                          onClick={() =>
-                            setExpandedEvents((prev) => ({
-                              ...prev,
-                              [i]: !prev[i],
-                            }))
-                          }
-                          className="text-gray-500 hover:text-gray-700"
-                        >
-                          {expandedEvents[i] ? '▼' : '▶'}
-                        </button>
-                      </div>
-                      <div className="text-xs text-gray-600">
-                        {(event.event.event.transcript &&
-                          '"' + event.event.event.transcript + '"') ||
-                          (event.event.event.type ===
-                            'response.function_call_arguments.done' &&
-                            event.event.event.name +
-                              '(' +
-                              event.event.event.arguments +
-                              ')') || (
-                            <span className="font-mono">
-                              {event.event.event.type}
-                            </span>
-                          ) ||
-                          // console.log(event.event) ||
-                          JSON.stringify(event.event)}
-                      </div>
-                      {expandedEvents[i] && (
+                      <details className="flex items-center justify-between">
+                        <summary className="font-mono">
+                          {formatTime(event.time) + ' '}
+                          <span className="text-xs text-gray-600">
+                            {(event.event.event.transcript && (
+                              <p>{'"' + event.event.event.transcript + '"'}</p>
+                            )) ||
+                              (event.event.event.type ===
+                                'response.function_call_arguments.done' &&
+                                event.event.event.name +
+                                  '(' +
+                                  event.event.event.arguments +
+                                  ')') || (
+                                <span className="font-mono">
+                                  {event.event.event.type}
+                                </span>
+                              ) ||
+                              // console.log(event.event) ||
+                              JSON.stringify(event.event)}
+                          </span>
+                        </summary>
                         <pre className="mt-2 whitespace-pre-wrap overflow-auto max-h-40">
                           {JSON.stringify(event.event, null, 2)}
                         </pre>
-                      )}
+                      </details>
                     </div>
                   ))}
                 </div>

@@ -1,3 +1,6 @@
+import { useEffect, useRef } from 'react';
+import { WavRecorder, WavStreamPlayer } from '../lib/wavtools/index.js';
+
 const dataMap = new WeakMap();
 
 /**
@@ -109,3 +112,85 @@ export const WavRenderer = {
     }
   },
 };
+
+export function useWaveRenderer() {
+  const clientCanvasRef = useRef<HTMLCanvasElement>(null);
+  const serverCanvasRef = useRef<HTMLCanvasElement>(null);
+  const wavRecorderRef = useRef<WavRecorder>(
+    new WavRecorder({ sampleRate: 24000 })
+  );
+  const wavStreamPlayerRef = useRef<WavStreamPlayer>(
+    new WavStreamPlayer({ sampleRate: 24000 })
+  );
+
+  useEffect(() => {
+    let isLoaded = true;
+
+    const clientCanvas = clientCanvasRef.current;
+    let clientCtx: CanvasRenderingContext2D | null = null;
+
+    const serverCanvas = serverCanvasRef.current;
+    let serverCtx: CanvasRenderingContext2D | null = null;
+
+    const render = () => {
+      if (isLoaded) {
+        if (clientCanvas) {
+          if (!clientCanvas.width || !clientCanvas.height) {
+            clientCanvas.width = clientCanvas.offsetWidth;
+            clientCanvas.height = clientCanvas.offsetHeight;
+          }
+          clientCtx = clientCtx || clientCanvas.getContext('2d');
+          if (clientCtx) {
+            clientCtx.clearRect(0, 0, clientCanvas.width, clientCanvas.height);
+            const result = wavRecorderRef.current.recording
+              ? wavRecorderRef.current.getFrequencies('voice')
+              : { values: new Float32Array([0]) };
+            WavRenderer.drawBars(
+              clientCanvas,
+              clientCtx,
+              result.values,
+              '#0099ff',
+              10,
+              0,
+              8
+            );
+          }
+        }
+        if (serverCanvas) {
+          if (!serverCanvas.width || !serverCanvas.height) {
+            serverCanvas.width = serverCanvas.offsetWidth;
+            serverCanvas.height = serverCanvas.offsetHeight;
+          }
+          serverCtx = serverCtx || serverCanvas.getContext('2d');
+          if (serverCtx) {
+            serverCtx.clearRect(0, 0, serverCanvas.width, serverCanvas.height);
+            const result = wavStreamPlayerRef.current.analyser
+              ? wavStreamPlayerRef.current.getFrequencies('voice')
+              : { values: new Float32Array([0]) };
+            WavRenderer.drawBars(
+              serverCanvas,
+              serverCtx,
+              result.values,
+              '#009900',
+              10,
+              0,
+              8
+            );
+          }
+        }
+        window.requestAnimationFrame(render);
+      }
+    };
+    render();
+
+    return () => {
+      isLoaded = false;
+    };
+  }, []);
+  return {
+    clientCanvasRef,
+    serverCanvasRef,
+    wavRecorderRef,
+    wavStreamPlayerRef,
+  };
+}
