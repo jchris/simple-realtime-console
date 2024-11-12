@@ -1,6 +1,10 @@
 # Simple Realtime Console
 
-https://github.com/openai/openai-realtime-console but it doesnt suck. simplest possible frontend only VAD server
+https://github.com/openai/openai-realtime-console but it doesnt suck. simplest possible frontend only VAD server implementation, because the original was way too bloated. see diff
+
+
+![image](https://github.com/user-attachments/assets/695e0dae-0a14-4128-98b3-faf1b121e23c)
+
 
 # Starting the console
 
