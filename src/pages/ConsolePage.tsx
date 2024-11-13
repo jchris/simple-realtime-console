@@ -1,7 +1,6 @@
 import { useRef, useCallback, useState } from 'react';
 
 import { RealtimeEvent, useRealtimeClient } from '../utils/useRealtimeClient';
-import { ItemType } from '@openai/realtime-api-beta/dist/lib/client.js';
 import { useWaveRenderer } from '../utils/useWaveRenderer';
 import { useUIScroller } from '../utils/useUIScroller';
 
@@ -9,16 +8,17 @@ const instructions = `System settings:
 Tool use: enabled.
 
 Instructions:
-- You are an artificial intelligence agent responsible for helping test realtime voice capabilities
+- You are an AI agent responsible for helping test realtime voice capabilities
 - Please make sure to respond with a helpful voice via audio
+- Speak fast, 2x speed.
 - Be kind, helpful, and curteous
-- It is okay to ask the user questions
+- It is okay to ask the user short followup or clarification questions
 - Use tools and functions you have available liberally, it is part of the training apparatus
+- You have access to the set_memory tool with some defined schemas you can add or delete to. Try not to add unnecessary keys.
 - Be open to exploration and conversation
-- Remember: this is just for fun and testing!
 
 Personality:
-- Be upbeat and genuine
+- Be snarky and sarcastic
 - Try speaking quickly as if excited
 `;
 
@@ -48,7 +48,7 @@ export function ConsolePage() {
     wavStreamPlayerRef,
   } = useWaveRenderer();
 
-  const { client, isConnected, connectConversation, disconnectConversation } =
+  const { client, isConnected, isMuted, setIsMuted, connectConversation, disconnectConversation } =
     useRealtimeClient(
       apiKey,
       startTimeRef,
@@ -113,7 +113,7 @@ export function ConsolePage() {
   }, []);
   return (
     <div className="flex flex-col h-screen">
-      <div className="flex-none p-4 border-b border-gray-200 flex items-center justify-between">
+      <div className="flex flex-none justify-between items-center p-4 border-b border-gray-200">
         <div className="flex items-center space-x-4">
           <button
             onClick={isConnected ? disconnectConversation : connectConversation}
@@ -127,12 +127,22 @@ export function ConsolePage() {
             {isConnected ? 'Disconnect' : 'Connect'}
           </button>
           {isConnected && (
-            <span className="flex">
+            <span className="flex space-x-2">
               <button
                 className="flex items-center gap-2 font-['Roboto_Mono'] text-xs font-normal border-none rounded-[1000px] px-6 min-h-[42px] transition-all duration-100 outline-none disabled:text-[#999] enabled:cursor-pointer bg-[#101010] text-[#ececf1] hover:enabled:bg-[#404040]"
                 onClick={() => client.createResponse()}
               >
                 Force Reply
+              </button>
+              <button
+                className={`flex items-center gap-2 font-['Roboto_Mono'] text-xs font-normal border-none rounded-[1000px] px-6 min-h-[42px] transition-all duration-100 outline-none disabled:text-[#999] enabled:cursor-pointer ${
+                  isMuted
+                    ? 'bg-yellow-500 hover:bg-yellow-600 text-white'
+                    : 'bg-[#101010] text-[#ececf1] hover:enabled:bg-[#404040]'
+                }`}
+                onClick={() => setIsMuted(!isMuted)}
+              >
+                {isMuted ? '🔇 Unmute' : '🔊 Mute'}
               </button>
             </span>
           )}
@@ -147,9 +157,9 @@ export function ConsolePage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto">
-        <div className="h-full flex flex-col md:flex-row">
-          <div className="flex-1 border-r border-gray-200 overflow-auto">
+      <div className="overflow-auto flex-1">
+        <div className="flex flex-col h-full md:flex-row">
+          <div className="overflow-auto flex-1 border-r border-gray-200">
             <div className="p-4">
               <div className="mb-4">
                 <canvas
@@ -166,7 +176,7 @@ export function ConsolePage() {
             </div>
           </div>
 
-          <div className="w-full md:w-96 overflow-auto">
+          <div className="overflow-auto w-full md:w-96">
             <div className="p-4">
               <div className="mb-4">
                 <h3 className="text-sm font-medium text-gray-700">Memory</h3>
@@ -180,7 +190,7 @@ export function ConsolePage() {
                 </h3>
                 <div
                   ref={eventsScrollRef}
-                  className="mt-2 space-y-2 h-96 overflow-auto"
+                  className="overflow-auto mt-2 space-y-2 h-full"
                 >
                   {realtimeEvents.map((event, i) => (
                     <div
@@ -189,7 +199,7 @@ export function ConsolePage() {
                         event.source === 'server' ? 'bg-green-50' : 'bg-blue-50'
                       }`}
                     >
-                      <details className="flex items-center justify-between">
+                      <details className="flex justify-between items-center">
                         <summary className="font-mono">
                           {formatTime(event.time) + ' '}
                           <span className="text-xs text-gray-600">
@@ -210,7 +220,7 @@ export function ConsolePage() {
                               JSON.stringify(event.event)}
                           </span>
                         </summary>
-                        <pre className="mt-2 whitespace-pre-wrap overflow-auto max-h-40">
+                        <pre className="overflow-auto mt-2 max-h-40 whitespace-pre-wrap">
                           {JSON.stringify(event.event, null, 2)}
                         </pre>
                       </details>

@@ -41,6 +41,7 @@ export function useRealtimeClient(
     })
   );
   const [isConnected, setIsConnected] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
   const [items, setItems] = useState<FormattedItem[]>([]);
 
   // basic idempotency wrappers
@@ -90,14 +91,14 @@ export function useRealtimeClient(
 
       await wavRecorderRef.current.begin(); // Ensure the recorder is connected before recording
       await wavRecorderRef.current.record((data: any) => {
-        if (clientRef.current.isConnected) {
+        if (clientRef.current.isConnected && !isMuted) {
           clientRef.current.appendInputAudio(data.mono);
         }
       });
     } catch (error) {
       console.error('Connection error:', error);
     }
-  }, [connect, setItems]);
+  }, [connect, setItems, isMuted]);
 
   const disconnectConversation = useCallback(async () => {
     try {
@@ -216,9 +217,26 @@ export function useRealtimeClient(
     };
   }, []); // Empty dependency array since we want this to run only once
 
+  // Create a memoized setMuted function that handles the recorder state
+  const setMuted = useCallback(async (muted: boolean) => {
+    setIsMuted(muted);
+    if (muted) {
+      await wavRecorderRef.current.end();
+    } else {
+      await wavRecorderRef.current.begin();
+      await wavRecorderRef.current.record((data: any) => {
+        if (clientRef.current.isConnected && !muted) {
+          clientRef.current.appendInputAudio(data.mono);
+        }
+      });
+    }
+  }, []);
+
   return {
     client: clientRef.current,
     isConnected,
+    isMuted,
+    setIsMuted: setMuted,
     items,
     connectConversation,
     disconnectConversation,

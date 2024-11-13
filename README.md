@@ -15,6 +15,8 @@ i've also suppressed all the less useful event spam into the console and made th
 
 i've also fixed the memory injection so it starts off with a little memory.
 
+also added a mute button.
+
 
 # Starting the console
 
