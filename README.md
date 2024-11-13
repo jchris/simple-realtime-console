@@ -2,10 +2,9 @@
 
 https://github.com/openai/openai-realtime-console but its on ozempic. simplest possible frontend only VAD server implementation, because the original was way too bloated. Ripped out SCSS, added Tailwind. 
 
-You can [see the diffs here](https://github.com/openai/openai-realtime-console/compare/main...swyxio:simple-realtime-console:main?expand=1) - we are at -1200 LOC deleted now.
+You can [see the diffs here](https://github.com/openai/openai-realtime-console/compare/main...swyxio:simple-realtime-console:main?expand=1) - we are at -1200 LOC deleted now. - more now that we can use [the library versions of wavetools](https://x.com/keithwhor/status/1856496169805140307) and [3rd party realtime api sdk](https://github.com/transitive-bullshit/openai-realtime-api).
 
 see diff
-
 
 ![image](https://github.com/user-attachments/assets/695e0dae-0a14-4128-98b3-faf1b121e23c)
 

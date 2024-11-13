@@ -3,13 +3,14 @@ import React, {
   useRef,
   useState,
   useCallback,
-  SetStateAction,
 } from 'react';
-import { RealtimeClient } from '@openai/realtime-api-beta';
 import {
-  ItemType,
-  ToolDefinitionType,
-} from '@openai/realtime-api-beta/dist/lib/client.js';
+  FormattedItem,
+  Realtime,
+  RealtimeClient,
+  ToolHandler,
+} from 'openai-realtime-api';
+import { WavRecorder } from 'wavetools';
 
 /**
  * Type for all event logs
@@ -31,7 +32,7 @@ export function useRealtimeClient(
   wavStreamPlayerRef: any,
   wavRecorderRef: any,
   initialInstructions: string,
-  tools?: [{ schema: ToolDefinitionType; fn: Function }]
+  tools?: [{ schema: Realtime.PartialToolDefinition; fn: ToolHandler }]
 ) {
   const clientRef = useRef<RealtimeClient>(
     new RealtimeClient({
@@ -40,12 +41,12 @@ export function useRealtimeClient(
     })
   );
   const [isConnected, setIsConnected] = useState(false);
-  const [items, setItems] = useState<ItemType[]>([]);
+  const [items, setItems] = useState<FormattedItem[]>([]);
 
   // basic idempotency wrappers
   const connect = useCallback(async () => {
     const client = clientRef.current;
-    if (!client.isConnected()) {
+    if (!client.isConnected) {
       await client.connect();
     }
     setIsConnected(true);
@@ -54,7 +55,7 @@ export function useRealtimeClient(
 
   const disconnect = useCallback(async () => {
     const client = clientRef.current;
-    if (client.isConnected()) {
+    if (client.isConnected) {
       await client.disconnect();
     }
     setIsConnected(false);
@@ -89,7 +90,7 @@ export function useRealtimeClient(
 
       await wavRecorderRef.current.begin(); // Ensure the recorder is connected before recording
       await wavRecorderRef.current.record((data: any) => {
-        if (clientRef.current.isConnected()) {
+        if (clientRef.current.isConnected) {
           clientRef.current.appendInputAudio(data.mono);
         }
       });
@@ -122,7 +123,8 @@ export function useRealtimeClient(
 
     tools?.forEach((obj) => clientRef.current.addTool(obj.schema, obj.fn));
 
-    clientRef.current.on('error', (error: Error) => {
+    clientRef.current.on('error', (error: any) => {
+      // should be Error
       console.error(error);
       setRealtimeEvents((prev) => [
         ...prev,
@@ -177,41 +179,21 @@ export function useRealtimeClient(
       ]);
     });
 
-    clientRef.current.on('audio', (audio: { audio: Uint8Array }) => {
-      wavStreamPlayerRef.current.add16BitPCM(audio.audio);
-    });
-
-    clientRef.current.on(
-      'conversation.updated',
-      async ({
-        item,
-        delta,
-      }: {
-        item: {
-          id: string;
-          status: string;
-          formatted: {
-            audio?: Uint8Array;
-            file?: { url: string };
-          };
-        };
-        delta?: { audio?: Uint8Array };
-      }) => {
-        const items = clientRef.current.conversation.getItems();
-        if (delta?.audio) {
-          wavStreamPlayerRef.current.add16BitPCM(delta.audio, item.id);
-        }
-        if (item.status === 'completed' && item.formatted.audio?.length) {
-          const wavFile = await WavRecorder.decode(
-            item.formatted.audio,
-            24000,
-            24000
-          );
-          item.formatted.file = wavFile;
-        }
-        setItems(items);
+    clientRef.current.on('conversation.updated', async ({ item, delta }) => {
+      const items = clientRef.current.conversation.getItems();
+      if (delta?.audio) {
+        wavStreamPlayerRef.current.add16BitPCM(delta.audio, item.id);
       }
-    );
+      if (item.status === 'completed' && item.formatted.audio?.length) {
+        const wavFile = await WavRecorder.decode(
+          item.formatted.audio,
+          24000,
+          24000
+        );
+        item.formatted.file = wavFile;
+      }
+      setItems(items);
+    });
 
     clientRef.current.on('conversation.interrupted', async () => {
       const trackSampleOffset = await wavStreamPlayerRef.current.interrupt();
@@ -221,8 +203,17 @@ export function useRealtimeClient(
       }
     });
 
-    // we omitted "proper" cleanup code bc not needed for simple demo but remember to add in real life to prevent mem leak. hot reloading here will also cause multiple injections
-    return () => void clientRef.current.removeTool('set_memory'); // remember to add back other cleanup code as needed eg client.off('error');
+    // Cleanup function to remove all event listeners and tools when component unmounts
+    return () => {
+      // Remove all tools
+      tools?.forEach((obj) => clientRef.current.removeTool(obj.schema.name));
+      
+      // Remove all event listeners
+      clientRef.current.off('error');
+      clientRef.current.off('realtime.event');
+      clientRef.current.off('conversation.updated');
+      clientRef.current.off('conversation.interrupted');
+    };
   }, []); // Empty dependency array since we want this to run only once
 
   return {
