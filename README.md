@@ -1,6 +1,6 @@
 # Simple Realtime Console
 
-https://github.com/openai/openai-realtime-console but it doesnt suck. simplest possible frontend only VAD server implementation, because the original was way too bloated. Ripped out SCSS, added Tailwind. 
+https://github.com/openai/openai-realtime-console but its on ozempic. simplest possible frontend only VAD server implementation, because the original was way too bloated. Ripped out SCSS, added Tailwind. 
 
 You can [see the diffs here](https://github.com/openai/openai-realtime-console/compare/main...swyxio:simple-realtime-console:main?expand=1) - we are at -1200 LOC deleted now.
 
