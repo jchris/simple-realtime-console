@@ -12,6 +12,12 @@ import {
 } from 'openai-realtime-api';
 import { WavRecorder } from 'wavtools';
 
+export interface EventData {
+  event_id?: string;
+  type?: string;
+  [key: string]: any;
+}
+
 /**
  * Type for all event logs
  */
@@ -19,16 +25,13 @@ export interface RealtimeEvent {
   time: string;
   source: 'client' | 'server';
   count?: number;
-  event: {
-    event_id?: string;
-    type?: string;
-    [key: string]: any;
-  };
+  event: EventData;
 }
+
 export function useRealtimeClient(
   apiKey: string,
   startTimeRef: any,
-  setRealtimeEvents: React.Dispatch<React.SetStateAction<RealtimeEvent[]>>,
+  addRealtimeEvent: (event: EventData) => void,
   wavStreamPlayerRef: any,
   wavRecorderRef: any,
   initialInstructions: string,
@@ -71,7 +74,7 @@ export function useRealtimeClient(
       await connect();
 
       // Only proceed with other setup if connection successful
-      setRealtimeEvents([]);
+      // setRealtimeEvents([]);
       setItems(clientRef.current.conversation.getItems());
 
       await wavStreamPlayerRef.current.connect();
@@ -127,14 +130,7 @@ export function useRealtimeClient(
     clientRef.current.on('error', (error: any) => {
       // should be Error
       console.error(error);
-      setRealtimeEvents((prev) => [
-        ...prev,
-        {
-          time: new Date().toISOString(),
-          source: 'client',
-          event: { type: 'error', error: error.message },
-        },
-      ]);
+      addRealtimeEvent({ type: 'error', error: error.message });
     });
 
     clientRef.current.on('realtime.event', (event: any) => {
@@ -170,14 +166,7 @@ export function useRealtimeClient(
         // this is the user's voice transcript
         event.source = 'client'; // force it to render as client even tho its technically not
       }
-      setRealtimeEvents((prev) => [
-        ...prev,
-        {
-          time: new Date().toISOString(),
-          source: event.source || 'client',
-          event: event,
-        },
-      ]);
+      addRealtimeEvent(event);
     });
 
     clientRef.current.on('conversation.updated', async ({ item, delta }) => {

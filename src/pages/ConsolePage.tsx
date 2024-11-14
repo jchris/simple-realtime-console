@@ -1,6 +1,6 @@
 import { useRef, useCallback, useState } from 'react';
 
-import { RealtimeEvent, useRealtimeClient } from '../utils/useRealtimeClient';
+import { EventData, RealtimeEvent, useRealtimeClient } from '../utils/useRealtimeClient';
 import { useWaveRenderer } from '../utils/useWaveRenderer';
 import { useUIScroller } from '../utils/useUIScroller';
 
@@ -35,8 +35,19 @@ export function ConsolePage() {
 
   const [realtimeEvents, setRealtimeEvents] = useState<RealtimeEvent[]>([]);
 
+  const addRealtimeEvent = useCallback((event: EventData) => {
+    setRealtimeEvents((prev) => [
+      ...prev,
+      {
+        time: new Date().toISOString(),
+        source: event.source || 'client',
+        event,
+      },
+    ]);
+  }, []);
+
   const [memoryKv, setMemoryKv] = useState<{ [key: string]: any }>({
-    userName: 'swyx',
+    userName: 'chris',
     todaysDate: new Date().toISOString().split('T')[0],
   });
 
@@ -52,7 +63,7 @@ export function ConsolePage() {
     useRealtimeClient(
       apiKey,
       startTimeRef,
-      setRealtimeEvents,
+      addRealtimeEvent,
       wavStreamPlayerRef,
       wavRecorderRef,
       instructions + ' Memory: ' + JSON.stringify(memoryKv, null, 2),
