@@ -1,8 +1,10 @@
-import { useRef, useCallback, useState } from 'react';
+import { useRef, useCallback, useState, useMemo } from 'react';
 
 import { EventData, RealtimeEvent, useRealtimeClient } from '../utils/useRealtimeClient';
 import { useWaveRenderer } from '../utils/useWaveRenderer';
 import { useUIScroller } from '../utils/useUIScroller';
+import { useFireproof } from 'use-fireproof';
+import { uuidv7 } from 'uuidv7';
 
 const instructions = `System settings:
 Tool use: enabled.
@@ -22,6 +24,14 @@ Personality:
 - Try speaking quickly as if excited
 `;
 
+type ConversationEvent = {
+  type: 'realtime_event';
+  conversationId: string;
+  time: string;
+  source: 'client' | 'server';
+  event: EventData;
+}
+
 export function ConsolePage() {
   const apiKey =
     localStorage.getItem('tmp::voice_api_key') ||
@@ -33,17 +43,28 @@ export function ConsolePage() {
 
   const startTimeRef = useRef<string>(new Date().toISOString());
 
-  const [realtimeEvents, setRealtimeEvents] = useState<RealtimeEvent[]>([]);
+  const { database, useLiveQuery } = useFireproof('conversations')
+
+  // const [realtimeEvents, setRealtimeEvents] = useState<RealtimeEvent[]>([]);
+  const [conversationId, setConversationId] = useState<string>('');
+
+  const eventResult = useLiveQuery<ConversationEvent>((doc, emit) => {
+    if (doc.type === 'realtime_event') {
+      emit([doc.conversationId, doc.time])
+    }
+  }, { prefix: conversationId })
+  const realtimeEvents = useMemo(() => {
+    return eventResult.docs
+  }, [eventResult])
 
   const addRealtimeEvent = useCallback((event: EventData) => {
-    setRealtimeEvents((prev) => [
-      ...prev,
-      {
-        time: new Date().toISOString(),
-        source: event.source || 'client',
-        event,
-      },
-    ]);
+    database.put({
+      time: new Date().toISOString(),
+      source: event.source || 'client',
+      conversationId,
+      event,
+      type: 'realtime_event',
+    })
   }, []);
 
   const [memoryKv, setMemoryKv] = useState<{ [key: string]: any }>({
@@ -58,7 +79,8 @@ export function ConsolePage() {
     wavRecorderRef,
     wavStreamPlayerRef,
   } = useWaveRenderer();
-
+  
+ 
   const { client, isConnected, isMuted, setIsMuted, connectConversation, disconnectConversation } =
     useRealtimeClient(
       apiKey,
@@ -96,6 +118,13 @@ export function ConsolePage() {
       ]
     );
 
+  const doConnectConversation = useMemo(() => {
+    return async () => {
+      setConversationId(uuidv7()); 
+      await connectConversation();
+    };
+  }, [connectConversation]);
+
   const formatTime = useCallback((timestamp: string) => {
     const startTime = startTimeRef.current;
     const t0 = new Date(startTime).valueOf();
@@ -127,7 +156,7 @@ export function ConsolePage() {
       <div className="flex flex-none justify-between items-center p-4 border-b border-gray-200">
         <div className="flex items-center space-x-4">
           <button
-            onClick={isConnected ? disconnectConversation : connectConversation}
+            onClick={isConnected ? disconnectConversation : doConnectConversation}
             disabled={!apiKey}
             className={`flex items-center gap-2 font-['Roboto_Mono'] text-xs font-normal border-none rounded-[1000px] px-6 min-h-[42px] transition-all duration-100 outline-none disabled:text-[#999] enabled:cursor-pointer px-4 py-2 rounded-md ${
               isConnected
