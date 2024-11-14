@@ -10,7 +10,7 @@ import {
   RealtimeClient,
   ToolHandler,
 } from 'openai-realtime-api';
-import { WavRecorder } from 'wavetools';
+import { WavRecorder } from 'wavtools';
 
 /**
  * Type for all event logs

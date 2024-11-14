@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { WavRecorder, WavStreamPlayer } from 'wavetools';
+import { WavRecorder, WavStreamPlayer } from 'wavtools';
 
 const dataMap = new WeakMap();
 
